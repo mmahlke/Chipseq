@@ -1,0 +1,16 @@
+#!/bin/bash
+#
+#SBATCH --cluster=smp
+#SBATCH --partition=high-mem
+#SBATCH -A yarbely
+#SBATCH --time=72:00:00
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=4
+#SBATCH --output /bgfs/yarbely/mam835/sbatch/Chipseq/Set1/%j.out
+#SBATCH --verbose
+
+cd /bgfs/yarbely/mam835/Chipseq/Set1
+module load macs/2.2.7.1
+macs2 callpeak -t A2_4.bam -c A1_9.bam -n YNA19_01 --outdir /bgfs/yarbely/mam835/Chipseq/Set1/YNA19 -f BAMPE -g 2.7e9 -q 0.01
+
+

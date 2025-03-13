@@ -1,0 +1,26 @@
+#!/bin/bash
+#
+#SBATCH --cluster=smp
+#SBATCH --partition=high-mem
+#SBATCH -A yarbely
+#SBATCH --time=72:00:00
+#SBATCH -n1
+#SBATCH --cpus-per-task=4
+#SBATCH --output /bgfs/yarbely/mam835/sbatch/Chipseq/Set3/%j.out
+#SBATCH --verbose
+
+cd /bgfs/yarbely/mam835/
+module load bowtie2/2.4.1
+module load gcc/8.2.0
+module load samtools/1.10
+bowtie2 -x human_index -q -1 /bgfs/yarbely/Data/usftp21.novogene.com/raw_data/A1IP/A1IP_CKDL210010900-1a-7_HC5H5DSX2_L3_2.fq.gz -2 /bgfs/yarbely/Data/usftp21.novogene.com/raw_data/A1IP/A1IP_CKDL210010900-1a-7_HC5H5DSX2_L3_1.fq.gz -S /bgfs/yarbely/mam835/Chipseq/Set3/A1.sam
+
+cd /bgfs/yarbely/mam835/Chipseq/Set3
+samtools view -b -h -F 3852  A1.sam > A1.bam
+samtools sort -o A1_s.bam A1.bam
+samtools index A1_s.bam
+
+module load deeptools/3.3.0
+bamCoverage -b A1_s.bam -o A1.bw --normalizeUsing RPKM -p max/2
+
+
