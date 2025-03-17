@@ -1,26 +1,86 @@
 #!/bin/bash
 #
-#SBATCH --cluster=smp
-#SBATCH --partition=high-mem
-#SBATCH -A yarbely
+#SBATCH --cluster=<cluster_name>
+#SBATCH --partition=<partition_name>
+#SBATCH -A <account_name>
 #SBATCH --time=72:00:00
 #SBATCH -n1
-#SBATCH --cpus-per-task=4
-#SBATCH --output /bgfs/yarbely/mam835/sbatch/Chipseq/Set3/%j.out
+#SBATCH --cpus-per-task=16
+#SBATCH --output /path/to/output/%j.out
 #SBATCH --verbose
 
-cd /bgfs/yarbely/mam835/
-module load bowtie2/2.4.1
+#First, make a directory for your sample and unpack your raw data there
+mkdir -p /path/to/working/directory
+for f in *.gz; do
+  STEM=$(basename "${f}" .gz)
+  gunzip -c "${f}" > /path/to/working/directory/"${STEM}"
+done
+
+# Go to your working directory
+cd /path/to/working/directory
+
+# Load required modules
+module load cutadapt/2.10
+module load bwa/0.7.17
 module load gcc/8.2.0
 module load samtools/1.10
-bowtie2 -x human_index -q -1 /bgfs/yarbely/Data/usftp21.novogene.com/raw_data/A1IP/A1IP_CKDL210010900-1a-7_HC5H5DSX2_L3_2.fq.gz -2 /bgfs/yarbely/Data/usftp21.novogene.com/raw_data/A1IP/A1IP_CKDL210010900-1a-7_HC5H5DSX2_L3_1.fq.gz -S /bgfs/yarbely/mam835/Chipseq/Set3/A1.sam
 
-cd /bgfs/yarbely/mam835/Chipseq/Set3
-samtools view -b -h -F 3852  A1.sam > A1.bam
-samtools sort -o A1_s.bam A1.bam
-samtools index A1_s.bam
+# Trim reads to remove adapters/ indices and improve read alignment
+cutadapt \
+    -a AGATCGGAAGAGCACACGTCTGAACTCCAGTCA \
+    -A AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT \
+    -o Reads.trimmed.R1.fastq -p Reads.trimmed.R2.fastq \
+    Raw_sample_reads_forward_1.fq Raw_sample_reads_reverse_2.fq
 
-module load deeptools/3.3.0
-bamCoverage -b A1_s.bam -o A1.bw --normalizeUsing RPKM -p max/2
+# -a and -A are adaptor sequences for NEBNext library prep kit adaptors; adjust if necessary
+# -o and -p are trimmed forward and reverse reads
 
+# Download genome assembly
+wget -P /path/to/save/assembly/ https://ftp.ncbi.nlm.nih.gov/genomes/path/to/chosen/assembly_genomic.fna.gz
 
+#build index with BWA
+bwa index /path/to/chosen/assembly_genomic.fna.gz index_name
+
+#Align with BWA
+bwa mem -t 10 -k 50 -c 1000000 /pth/to/assembly_genomic.fna.gz \
+Raw_sample_reads_forward_1.fq \
+Raw_sample_reads_reverse_2.fq \
+> Aligned_reads.sam
+
+# the above parameters are specified for mapping in repetitive regions and while they may not laregely change mapping
+#    outside of repetitive regions, they are intended to help mapping to repetitive regions
+# -t is number of threads
+# -k is minimum seed length to consider matching between a read and reference. 
+#    -k 50 is ~1/3 length of an upaired read and can help for mapping fidelity in repetitive regions
+# -c is the parameter to control for multimapping
+#    if a read can be placed more than -c times in the genome, it is discarded
+#    the base value for -c is 10000, we are asking for 100x that
+#    this also helps retain repetitive reads (centromere)
+
+# Filter, sort and index your alignment
+samtools view -b -h -F 3852  Aligned_reads.sam > Aligned_reads.bam
+
+# -b specifies the output should be .bam format (compressed version of .sam)
+# -h specifies to retain the header information
+# -F 3852 specifies what read flags to use for filtering. 
+#    In Samtools, the -F option is used to filter out alignments based on the FLAG field in a SAM/BAM file. 
+#    The number 3852 is a bitwise flag value that specifies which alignments to exclude
+#    Here’s what each bit means in the FLAG field:
+
+#    Bit     (Binary)	            Decimal	  Meaning
+#    0x0004 (0000 0000 0000 0100)	  4	      Read is unmapped
+#    0x0008 (0000 0000 0000 1000)	  8	      Mate is unmapped
+#    0x0100 (0000 0001 0000 0000)	  256	    Not primary alignment
+#    0x0200 (0000 0010 0000 0000)	  512	    Fails quality checks
+#    0x0400 (0000 0100 0000 0000)	  1024	  PCR or optical duplicate
+
+# 4 + 8 + 256 + 512 + 1024 = 3852
+# This means -F 3852 will exclude alignments that have any of the above flags
+
+# Now we sort and index the .bam file
+# Sorting and creating a index for the file make it easier to use by other tools
+samtools sort -o Aligned_reads_sorted.bam Aligned_reads.bam
+samtools index Aligned_reads_sorted.bam
+
+# The sorted and indexed .bam file is now ready for downstream processing
+# Read normalization, visualization, and statistical peak calling performed in separate scripts
