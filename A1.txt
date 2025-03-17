@@ -83,4 +83,6 @@ samtools sort -o Aligned_reads_sorted.bam Aligned_reads.bam
 samtools index Aligned_reads_sorted.bam
 
 # The sorted and indexed .bam file is now ready for downstream processing
+# These same exact steps should be performed for the matched input file
+# The input .bam will be used in normalization, visualization and peak calling
 # Read normalization, visualization, and statistical peak calling performed in separate scripts
